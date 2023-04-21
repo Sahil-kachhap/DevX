@@ -1,6 +1,11 @@
+const { Error } = require("mongoose");
 const {catchAsyncError} = require("../middlewares/catchAsyncError.js");
 const {User} = require("../models/User.js");
+const {Course} = require("../models/Course.js");
+const ErrorHandler = require("../utils/error_handler.js");
+const { sendEmail } = require("../utils/send_email.js");
 const {sendToken} = require("../utils/send_token.js");
+const crypto = require("crypto");
 
 const register = catchAsyncError(async (req, res, next) => {
    console.log(req.body);
@@ -62,7 +67,6 @@ const logOut = catchAsyncError(async (req, res, next) => {
 
 const profile = catchAsyncError(async (req, res, next) => {
   const user = await User.findById(req.user._id);
-  console.log(user);
 
   res.status(200).json({
     success: true,
@@ -70,4 +74,148 @@ const profile = catchAsyncError(async (req, res, next) => {
   });
 });
 
-module.exports = {register, login, logOut, profile};
+const updateProfile = catchAsyncError(async (req, res, next) => {
+   const {name, email} = req.body;
+
+   const user = await User.findById(req.user._id);
+
+   if(name) 
+       user.name = name;
+
+   if(email)
+       user.email = email;
+
+   await user.save();
+   
+   res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+   });
+});
+
+const changePassword = catchAsyncError(async (req, res, next) => {
+  const {oldPassword, newPassword} = req.body;
+
+  if(!oldPassword || !newPassword){
+    return next(new ErrorHandler("All Fields are required", 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+password");
+  
+  const passwordMatched = await user.comparePassword(oldPassword);
+
+  if(!passwordMatched)
+    return next(new ErrorHandler("Incorrect old password", 400));
+
+  user.password = newPassword;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "password changed successfully",
+  });
+});
+
+const forgotPassword = catchAsyncError(async (req, res, next) => {
+   const {email} = req.body;
+   
+   const user = await User.findOne({email});
+
+   if(!user) 
+      return next(new ErrorHandler("User not found", 400));
+
+   const resetToken = await user.getResetToken();
+
+   await user.save();
+
+   const url = `${process.env.FRONTEND_URL}/resetPassword/${resetToken}`;
+   const message = `Click on the link to reset your password. ${url}. If you have not requested then please ignore`;
+
+   await sendEmail(user.email, "DevX Reset Password", message);
+
+   res.status(200).json({
+      success: true,
+      message: `Password reset mail has been sent on ${user.email}`
+   });
+});
+
+const resetPassword = catchAsyncError(async (req, res, next) => {
+  
+   const {token} = req.params;
+   const ResetPasswordToken = crypto.createHash("sha256").update(token).digest("hex");
+
+   const user = await User.findOne({
+      ResetPasswordToken,
+      ResetPasswordExpire:{
+      $gt: Date.now(),
+     }
+   });
+   
+   if(!user){
+      return next(new ErrorHandler("Token is invalid or has been expired", 401));
+   }
+
+   user.password = req.body.password;
+   user.ResetPasswordExpire = undefined;
+
+   await user.save();
+
+   res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+   });
+});
+
+const addToPlaylist = catchAsyncError(async (req, res, next) => {
+   const user = await User.findById(req.user._id);
+   const course = await Course.findById(req.body.id);
+
+   if(!course){
+      return next(new ErrorHandler("Course not found", 404));
+   }
+
+   const courseExists = user.playlist.find((item) => {
+      if(item.course.toString() === course._id.toString())
+         return true;
+   });
+
+   if(courseExists){
+      return next(new ErrorHandler("Course already exists in playlist", 409));
+   }
+
+   user.playlist.push({
+      course:course._id,
+      poster:course.poster.url,
+   });
+
+   await user.save();
+
+   res.status(200).json({
+      success: true,
+      message: "Course added to playlist",
+   });
+});
+
+
+const removeFromPlaylist = catchAsyncError(async (req, res, next) => {
+   const user = await User.findById(req.user._id);
+   const course = await Course.findById(req.query.id);
+
+   if(!course){
+      return next(new ErrorHandler("Course not found", 404));
+   }
+
+   const newPlaylist = user.playlist.filter(item => {
+      if(item.course.toString() !== course._id.toString()) return item;
+   });
+
+   user.playlist = newPlaylist;
+   await user.save();
+
+   res.status(200).json({
+      success: true,
+      message: "Removed from playlist",
+   });
+});
+
+module.exports = {register, login, logOut, profile, changePassword, updateProfile, forgotPassword, resetPassword, addToPlaylist, removeFromPlaylist};
