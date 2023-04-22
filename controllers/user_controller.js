@@ -79,6 +79,19 @@ const profile = catchAsyncError(async (req, res, next) => {
   });
 });
 
+const deleteProfile = catchAsyncError(async (req, res, next) => {
+   const user = user.findById(req.user._id);
+   await cloudinary.v2.uploader.destroy(user.avatar.public_id);
+
+   await user.remove();
+   res.status(200).cookie("token", null, {
+      expires: new Date(Date.now()), 
+   }).json({
+      success: true,
+      message: "Profile deleted successfully",
+   });
+});
+
 const updateProfile = catchAsyncError(async (req, res, next) => {
    const {name, email} = req.body;
 
@@ -244,4 +257,53 @@ const removeFromPlaylist = catchAsyncError(async (req, res, next) => {
    });
 });
 
-module.exports = {register, login, logOut, profile, changePassword, updateProfile, updateProfilePicture, forgotPassword, resetPassword, addToPlaylist, removeFromPlaylist};
+// ADMIN CONTROLLERS
+const getAllUsers = catchAsyncError(async (req, res, next) => {
+  const users = await User.find({});
+   res.status(200).json({
+      success: true,
+      users,
+   });
+});
+
+const updateRole = catchAsyncError(async (req, res, next) => {
+   const user = await User.findById(req.params);
+   
+   if(!user){
+      return next(new ErrorHandler("User not found", 404));
+   }
+
+   if(user.role === "user"){
+      user.role = "admin";
+   }else{
+      user.role = "user";
+   }
+
+   await user.save();
+
+   res.status(200).json({
+      success: true,
+      message: "Role updated successfully",
+   });
+});
+
+const deleteUser = catchAsyncError(async (req, res, next) => {
+   const user = await User.findById(req.params);
+
+   if(!user){
+      return next(new ErrorHandler("User not found", 404));
+   }
+
+   await cloudinary.v2.uploader.destroy(user.avatar.public_id);
+
+   await user.remove();
+
+   res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+   }); 
+});
+
+
+
+module.exports = {register, login, logOut, profile, changePassword, updateProfile, updateProfilePicture, forgotPassword, resetPassword, addToPlaylist, removeFromPlaylist, getAllUsers, updateRole, deleteUser, deleteProfile};

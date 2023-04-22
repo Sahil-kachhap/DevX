@@ -2,6 +2,7 @@ const express = require("express");
 const {config} = require("dotenv");
 const course = require("./routes/course_routes.js");
 const user = require("./routes/user_routes.js");
+const payment = require("./routes/payment_routes.js");
 const ErrorMiddleWare = require("./middlewares/error.js");
 const cookieParser = require("cookie-parser");
 
@@ -16,6 +17,7 @@ app.use(cookieParser());
 
 app.use("/api/v1", course);
 app.use("/api/v1", user);
+app.use("/api/v1", payment);
 
 module.exports = app;
 
