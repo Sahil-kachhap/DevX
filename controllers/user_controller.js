@@ -6,13 +6,15 @@ const ErrorHandler = require("../utils/error_handler.js");
 const { sendEmail } = require("../utils/send_email.js");
 const {sendToken} = require("../utils/send_token.js");
 const crypto = require("crypto");
+const cloudinary = require("cloudinary");
+const getDataUri = require("../utils/dataUri.js");
 
 const register = catchAsyncError(async (req, res, next) => {
    console.log(req.body);
    const {name, email, password} = req.body;
+   const file = req.file;
 
-   //const file = req.file;
-   if(!name || !email || !password){
+   if(!name || !email || !password || !file){
      return next(new ErrorHandler("Please enter all the fields", 400));
    }
 
@@ -20,13 +22,16 @@ const register = catchAsyncError(async (req, res, next) => {
    if(user)
       return next(new ErrorHandler("User already exists", 409));
 
+      const fileUri = getDataUri(file).content;
+      const myCloud = await cloudinary.v2.uploader.upload(fileUri);
+
    user = await User.create({
      name,
      email,
      password,
      avatar: {
-        public_id: "temp_id",
-        url: "temp_url",
+        public_id: myCloud.public_id,
+        url: myCloud.secure_url,
      },
    });
 
@@ -90,6 +95,27 @@ const updateProfile = catchAsyncError(async (req, res, next) => {
    res.status(200).json({
       success: true,
       message: "Profile updated successfully",
+   });
+});
+
+const updateProfilePicture = catchAsyncError(async (req, res, next) => {
+   const user = await User.findById(req.user._id);
+   const file = req.file;
+   const fileUri = getDataUri(file).content;
+   const myCloud = await cloudinary.v2.uploader.upload(fileUri);
+
+   await cloudinary.v2.uploader.destroy(user.avatar.public_id);
+
+   user.avatar = {
+      public_id: myCloud.public_id,
+      url: myCloud.secure_url,
+   };
+
+   await user.save();
+
+   res.status(200).json({
+      success: true,
+      message: "Profile picture updated successfully",
    });
 });
 
@@ -218,4 +244,4 @@ const removeFromPlaylist = catchAsyncError(async (req, res, next) => {
    });
 });
 
-module.exports = {register, login, logOut, profile, changePassword, updateProfile, forgotPassword, resetPassword, addToPlaylist, removeFromPlaylist};
+module.exports = {register, login, logOut, profile, changePassword, updateProfile, updateProfilePicture, forgotPassword, resetPassword, addToPlaylist, removeFromPlaylist};
